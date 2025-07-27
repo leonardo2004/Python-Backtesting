@@ -1,76 +1,62 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import datetime
+import datetime as dt
 
-def YFTicker(ticker: str, start: datetime.datetime, end: datetime.datetime, interval: str, balance: float):
-    """
-        DOWNLOAD ticker FUNCTION
-        THIS WILL DOWNLOAD ANY TICKER FROM YFINANCE AND PREPARE IT FOR FUTURE USE
+class YFTicker():
+    def __init__(self, name: str, start: dt.datetime, end: dt.datetime, time_interval: str):
+        self.name = name
+        self.start = start
+        self.end = end
+        self.time_interval = time_interval
 
-        PARAMS:
-            ticker: STR -> ticker NAME, EX: "ticker-USD"
-            start: DATETIME.DATETIME -> START DATE
-            end: DATETIME.DATETIME -> END DATE
-            interval: STR -> TRADE INTERVALS
-    """
-    try:
-        newticker = yf.download(
-        ticker,
-        start=start,
-        end=end,
-        interval=interval,
-        auto_adjust=True,
+    #downloads the ticker from yfinance
+    def Download(self, fill_method = '', drop_na=False, drop_zero=False):
+        self.data = yf.download(
+            self.name,
+            start=self.start,
+            end=self.end,
+            interval=self.time_interval,
+            auto_adjust=True,
         multi_level_index=False
-)
-    except:
-        print("Download error")  
+        ).loc[:,["Open","High","Low","Close","Volume"]].round(2)
     
-    """
-    THIS NEXT PART:
-        * ADDS THE LINE COLUMN -> IT COUNTS THE NUMBER OF 
-        LINES IN THE DATABASE, SO EACH INTERVAL IS REPRESENTED 
-        AS A LINE
+        #fill nan values using the selected method
+        if fill_method == 'ffill':
+            self.data.ffill(inplace=True)
+        elif fill_method == 'bfill':
+            self.data.bfill(inplace=True)
+        elif fill_method == 'interpolate':
+            self.data.interpolate(inplace=True)
+        
+        #drop zeros
+        if drop_zero:
+            self.data.replace(to_replace=0,value=np.nan,inplace=True)
 
-        * REORGANIZES THE DATAFRAME IN THE FOLLOWING
-        ORDER: "Line","Open","High","Low","Close","Volume"
+        #drop na
+        if drop_na:
+            self.data.dropna(inplace=True)
 
-        * SQUEEZE THE TICKER (FOR OPTIMIZATION)
-    """
+    #saves ticker as .pkl file
+    def SavePKL(self, path="./ticker.pkl"):
+        self.data.to_pickle(path)
 
-    #Add a column that contains the line number
-    #try:
-    newticker["Line"] = np.arange(1, len(newticker)+1)
-    #except:
-    #    print("Error: Could not add lines to ticker Dataframe")
+    #loads ticker as .pkl file
+    def LoadPKL(self, path="./ticker.pkl"):
+        self.data = pd.read_pickle(path)
+           
+    #WIP -> calculates intraday_change
+    def intraday_change(self):
+        idchange = 100*self.data[['Open','Close']].pct_change(axis=1)
+        pass
 
-    #Format the ticker (Line, Open, High, Low, Close, Volume)
-    try:
-        newticker = newticker.loc[:,["Line","Open","High","Low","Close","Volume"]]
-    except:
-        print("Error: Could not reorganize ticker values")
+    #returns a pandas series with the logarithmic return calculated based on the closing column
+    def log_creturn(self):
+        return np.log(self.data.Close / self.data.Close.shift()).fillna(0)
     
-    #Add a return column based on previous and current day values
-    try:
-        newticker["Return"] = newticker["Close"].diff()
-        newticker["Return"] = (balance*newticker["Return"] / newticker["Close"].iat[0])
-        newticker["Return"].fillna(0)
-    except:
-        print("Error: Could not create Return column")
-
-    #Repeats previous values when volume is missing data (This will probably change)
-    try:
-        newticker["Volume"] = newticker["Volume"].replace(0, np.nan).ffill()
-    except:
-        print("Error: Could not remove empty values from volume")
-
-    #Squeeze the ticker for use
-    try:
-        newticker = newticker.squeeze()
-    except:
-        print("Error: Could not squeeze ticker")
-    
-    return newticker
+    #returns a pandas series with the return calculated based on the closing column
+    def creturn(self):
+        return (self.data.Close - self.data.Close.shift()).fillna(0)
 
 def run_strategy(ticker: pd.DataFrame, fee: float, initial_balance: float):
     val = line = total_operations = win_operations = total_fee = profit = 0
