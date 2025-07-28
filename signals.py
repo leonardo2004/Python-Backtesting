@@ -1,19 +1,18 @@
 import pandas as pd
 import numpy as np
 
-def SMA_direction(column: str, ticker: pd.DataFrame, delta = 0):
+def SMA_direction(column: str, series: pd.Series, delta = 0):
     """
         THIS FUNCTIONS CHECKS IF THE SMA IS GOING UP OR DOWN BASED ON THE PREVIOUS VALUE
         IT RETURNS A SIGNAL NUMPY LIST: 1 == TRUE, 0 == NONE, -1 == FALSE
 
         PARAMNS:
-            column: str -> THE SMA COLUMN NAME IN THE PANDAS DATAFRAME
-            ticker: pd.DataFrame -> ticker DATAFRAME
+            series: pd.Series -> INPUT THE SMA SERIES
             delta: float -> DELTA, MINIMUM VARIATION REQUIRED
     """
     #.shift(1) -> GETS THE VALUE OF THE PREVIOUS LINE
-    signal = np.where((ticker[column]>((1 + delta) * ticker[column].shift(1))),1,0)
-    signal = np.where((ticker[column]<((1 - delta) * ticker[column].shift(1))),-1,signal)
+    signal = np.where((series>((1 + delta) * series.shift(1))),1,0)
+    signal = np.where((series<((1 - delta) * series.shift(1))),-1,signal)
     return signal
 
 def SMA_loc(columnA: str, columnB: str, ticker: pd.DataFrame, delta = 0):

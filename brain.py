@@ -4,16 +4,16 @@ import yfinance as yf
 import datetime as dt
 
 class YFTicker():
-    def __init__(self, name: str, start: dt.datetime, end: dt.datetime, time_interval: str):
-        self.name = name
+    def __init__(self, ticker: str, start: dt.datetime, end: dt.datetime, time_interval: str):
+        self.ticker = ticker
         self.start = start
         self.end = end
         self.time_interval = time_interval
 
     #downloads the ticker from yfinance
-    def Download(self, fill_method = '', drop_na=False, drop_zero=False):
+    def download(self, fill_method = '', drop_na=False, drop_zero=False):
         self.data = yf.download(
-            self.name,
+            self.ticker,
             start=self.start,
             end=self.end,
             interval=self.time_interval,
@@ -23,26 +23,26 @@ class YFTicker():
     
         #fill nan values using the selected method
         if fill_method == 'ffill':
-            self.data.ffill(inplace=True)
+            self.data = self.data.ffill()
         elif fill_method == 'bfill':
-            self.data.bfill(inplace=True)
+            self.data = self.data.bfill()
         elif fill_method == 'interpolate':
-            self.data.interpolate(inplace=True)
+            self.data = self.data.interpolate()
         
         #drop zeros
         if drop_zero:
-            self.data.replace(to_replace=0,value=np.nan,inplace=True)
+            self.data = self.data.replace(to_replace=0,value=np.nan)
 
-        #drop na
+        #drop not a number values
         if drop_na:
-            self.data.dropna(inplace=True)
+            self.data = self.data.dropna()
 
     #saves ticker as .pkl file
-    def SavePKL(self, path="./ticker.pkl"):
+    def save_pkl(self, path="./ticker.pkl"):
         self.data.to_pickle(path)
 
     #loads ticker as .pkl file
-    def LoadPKL(self, path="./ticker.pkl"):
+    def load_pkl(self, path="./ticker.pkl"):
         self.data = pd.read_pickle(path)
            
     #WIP -> calculates intraday_change
@@ -57,77 +57,156 @@ class YFTicker():
     #returns a pandas series with the return calculated based on the closing column
     def creturn(self):
         return (self.data.Close - self.data.Close.shift()).fillna(0)
+    
+    #returns the value of a column in a specific time
+    def get_value(self, time: np.datetime64, column: str)->float:
+        return (self.data[column].loc[time])
 
-def run_strategy(ticker: pd.DataFrame, fee: float, initial_balance: float):
-    val = line = total_operations = win_operations = total_fee = profit = 0
+class Operation():
+    def __init__(self, start_price: float, start_time: np.datetime64, op_type = 'Long'):
+        '''op_type: Long or Short'''
+        self.op_type = op_type
+        self.is_open = True
 
-    balance = initial_balance
-    ticker["Strategy_Return"] = pd.Series(0)
+        #Price
+        self.start_price = start_price
+        self.end_price = None
+        self.percentual_return = None
+                
+        #Time
+        self.start_time = start_time
+        self.end_time = None
 
-    #Run strategy:
-    for i in ticker.Entry:
-        if (i > 0):
-            if (val == -1 or i == 2):
-                #SELL END
-                delta = start - ticker["Close"].iat[line]
-                if delta > 0:
-                    win_operations += 1
-                print(f"SHORT {balance:.2f} {(delta*balance)/start:.2f} {ticker["Entry"].iat[line]} LINE {line}")
+    def end(self, end_price: float, end_time: np.datetime64):
 
-                profit = (delta*balance)/start
-                balance += profit
-                ticker["Strategy_Return"].iat[line] = profit
+        #Updating variables
+        self.is_open = False
+        self.end_price = end_price
+        self.end_time = end_time
 
-                val = 0
-            if (val == 0):
-                #BUY START
-                total_fee += balance * (fee / 100)
-                total_operations += 1
-                start = ticker["Close"].iat[line]
-                val = 1
+        if self.is_long():
+            self.percentual_return = self.end_price/self.start_price
+        else: 
+            self.percentual_return = self.start_price/self.end_price
+    
+    #Checks is an operation is long
+    def is_long(self) -> bool:
+        if self.op_type == "Long":
+            return True
+        return False
+    
+    #Checks is an operation is short
+    def is_short(self) -> bool:
+        if self.op_type == "Short":
+            return True
+        return False
 
-        elif (i < 0):
-            if (val == 1 or i == -2):
-                #BUY END
-                delta = ticker["Close"].iat[line] - start
-                if delta > 0:
-                    win_operations += 1
-                print(f"LONG {balance:.2f} {(delta*balance)/start:.2f} {ticker["Entry"].iat[line]} LINE {line}")
+class Strategy():
+    def __init__(self, signal_array: np.array, ticker: YFTicker, initial_balance: float = None,  trading_fee = 0):
+        '''
+        Signal array: 
+            >0 end sell and buy; 
+            <0 == end buy and sell;
+            0 == wait
+        '''
+        #Start values
+        self.ticker = ticker
+        self.balance = initial_balance if initial_balance else self.ticker.data.Close.iloc[0]
+        self.trading_fees = trading_fee
+        self.ticker.data['Signal'] = signal_array
 
-                profit = (delta*balance)/start
-                balance += profit
-                ticker["Strategy_Return"].iat[line] = profit
+        #Results
+        self.total_fees = 0
+        self.operations = []
+        self.ticker.data['Buy and Hold'] = (self.ticker.data.Close / self.ticker.data.Close.iloc[0]) * self.balance
+        self.ticker.data['Strategy Return'] = pd.Series()
 
-                total_fee += balance * (fee / 100)
-                val = 0
-            if (val == 0):
-                #SELL START
-                total_fee += balance * (fee /100)
-                total_operations += 1
-                start = ticker["Close"].iat[line]
-                val = -1
+    def calculate_fee(self) -> float:
+        return (self.trading_fees/100) * self.balance
 
-        line += 1
+    def run(self):
+        for time in self.ticker.data.index:
+
+            close = self.ticker.get_value(time, 'Close')
+            signal = self.ticker.get_value(time, 'Signal')
+
+            #End short operation
+            if (signal > 0 
+                and self.operations
+                and self.operations[-1].is_open
+                and self.operations[-1].is_short()):
+                
+                #Update balance
+                self.operations[-1].end(close, time)
+                self.balance *= self.operations[-1].percentual_return
+
+                #Update fees
+                self.total_fees += self.calculate_fee()
+                self.balance -= self.calculate_fee()
+                
+                signal -= 1
+
+            #Start long operation
+            elif (signal > 0 
+                  and not (self.operations 
+                           and self.operations[-1].is_open)):
+                
+                #Start operation
+                self.operations.append(Operation(close,time,'Long'))
+
+                #Update fees
+                self.total_fees += self.calculate_fee()
+                self.balance -= self.calculate_fee()
+
+                signal -= 1
+
+            #End long operation
+            if (signal < 0 
+                and self.operations
+                and self.operations[-1].is_open
+                and self.operations[-1].is_long()):
+
+                #Update balance
+                self.operations[-1].end(close, time)
+                self.balance *= self.operations[-1].percentual_return
+
+                #Update fees
+                self.total_fees += self.calculate_fee()
+                self.balance -= self.calculate_fee()
+
+                signal += 1
+
+            #Start short operation
+            elif (signal < 0 
+                  and not (self.operations 
+                           and self.operations[-1].is_open)):
+
+                #Start operation
+                self.operations.append(Operation(close,time,'Short'))
+
+                #Update fees
+                self.total_fees += self.calculate_fee()
+                self.balance -= self.calculate_fee()
+
+                signal += 1
+
+            self.ticker.data.loc[time,'Strategy Return'] = self.balance
+
+        #Generate results array
+        
+        """#Debug stuff
+        for i in self.operations:
+        
+            print(f'Is open: {i.is_open}\n',
+                  f'Start time: {i.start_time}\n',
+                  f'End time: {i.end_time}\n',
+                  f'Return: {i.percentual_return}\n')
+        print(self.balance-total_fees)
+        teste = pd.DataFrame({'Strategy_Return':self.strategy_return,'Signals':self.signals})
+        print(teste.head(50))
+"""
+        print(self.ticker.data[['Strategy Return','Buy and Hold','Close']])
+        print(self.total_fees)
+        print(len(self.operations))
 
 
-    #Strategy return calculation:
-    ticker["Strategy_Return"] = ticker["Strategy_Return"].fillna(0)
-
-    #Buy and Hold return:
-    bnh_total_return = ticker["Close"].iat[-1] - ticker["Close"].iat[0]
-    bnh_percentual_return = (bnh_total_return*100)/(ticker["Close"].iat[0])
-
-    #Printing results:    
-    print("\n\n"+"~"*16+"Results:"+"~"*16)
-    print(f"Total operations: {total_operations}")
-    print(f"Win operations: {win_operations}")
-    if total_operations > 0:
-        print(f"Win percentage: {win_operations / total_operations *100:.2f}%")
-    else:
-        print("Win percentage: 0.00%")
-    print(f"Total fees: {total_fee:.2f}")
-    print(f"Buy Hold return: {bnh_percentual_return:.2f}%")
-    print(f"Strategy return: {((balance-initial_balance)*100/initial_balance):.2f}%")
-    print(f"Balance: {((balance)-total_fee):.2f}")
-    print(f"Profit: {((balance - initial_balance)-total_fee):.2f}")
-    return

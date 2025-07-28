@@ -38,24 +38,41 @@ PERIOD_START = PERIOD_END - datetime.timedelta(days=8)
 
 
 ETH = brain.YFTicker('ETH-USD',PERIOD_START,PERIOD_END,'5m')
-#ETH.Download()
-#ETH.SavePKL('./Data/ticker.pkl')
-ETH.LoadPKL('./Data/eth5m.pkl')
-print(ETH.data.round(2))
-print(ETH.data)
+#ETH.download()
+#print(ETH.data)
+#ETH.save_pkl('./Data/ticker.pkl')
+ETH.load_pkl('./Data/ticker.pkl')
+ethsma = indicators.SMA(ETH, 5, 'Close')
+signals = ethsma.direction('teste')
+signals = np.asarray(signals, dtype=np.int8)
+
+# Método mais eficiente para arrays muito grandes
+changes = np.concatenate([[False], signals[1:] != signals[:-1]])
+group_ids = np.cumsum(changes)
+
+# Técnica avançada: usar bincount para contar mais rápido
+counts = np.bincount(group_ids)
+valid_groups = counts >= 10
+# Broadcasting boolean indexing (mais rápido que dict)
+mask = valid_groups[group_ids]
+signals = np.where(mask, signals, 0)
+
+#signals = np.where(ETH.creturn() > 0, 0, 1)
+#signals = np.where(ETH.creturn() < 0,signals, -1)
 
 
-#Create SMAs
-#Close
-'''BTC = indicators.SMA(ticker=BTC, 
-                    SMA_window=5, 
-                    column="Close")
-BTC = indicators.SMA(ticker=BTC, 
-                    SMA_window=20, 
-                    column="Close")
-BTC = indicators.SMA(ticker=BTC, 
-                    SMA_window=200,
-                    column="Close")'''
+#Importante
+signals = np.diff(signals,prepend=0)
+#print(ETH.data.round(2))
+#print(ETH.data.items)
+
+teste = brain.Strategy(signals, ETH, 500, trading_fee=0.05)
+teste.run()
+
+#SMA TEST
+
+
+
 
 
 
