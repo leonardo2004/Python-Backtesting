@@ -15,6 +15,7 @@ def VWAP(ticker: pd.DataFrame):
         print("Error: Could not generate VWAP")
     return vwap
 
+#Simple moving average
 class SMA():
     def __init__(self,ticker: br.YFTicker, sma_window: int, column: str):
         """
@@ -26,9 +27,26 @@ class SMA():
 
         """
         #Create the SMA
-        self.values = (ticker.data[column].rolling(window=sma_window).mean().shift()).fillna(0)
+        self.values = ticker.data[column].rolling(window=sma_window).mean().shift().fillna(0)
 
-    def direction(self, filter_type: str, delta = 0):
-        dir = np.where((self.values>((1 + delta) * self.values.shift(1))),1,0)
-        dir = np.where((self.values<((1 - delta) * self.values.shift(1))),-1, dir)
-        return dir
+    #Return a signal array based on the direction of the moving average (up or down)
+    def direction(self, delta = 0):
+        signals = np.where((self.values>((1 + delta) * self.values.shift(1))),
+                          1,
+                          0)
+        return np.where((self.values<((1 - delta) * self.values.shift(1))),
+                          -1,
+                          signals)
+    
+    #Return a signal array based on the relative position of two moving averages
+    def is_crossing(self, sma, delta = 0):
+
+        #For some reason, when using the direct value the code transforms it to numpy array
+        values = pd.Series(sma.values)
+        
+        signal = np.where((self.values > ((1 + delta) * values.shift(1))),
+                          1,
+                          0)
+        return np.where((self.values < ((1 - delta) * values.shift(1))),
+                          -1,
+                          signal)

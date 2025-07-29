@@ -103,24 +103,23 @@ class Operation():
 
 class Strategy():
     def __init__(self, signal_array: np.array, ticker: YFTicker, initial_balance: float = None,  trading_fee = 0):
-        '''
-        Signal array: 
-            >0 end sell and buy; 
-            <0 == end buy and sell;
-            0 == wait
-        '''
+
         #Start values
         self.ticker = ticker
         self.balance = initial_balance if initial_balance else self.ticker.data.Close.iloc[0]
         self.trading_fees = trading_fee
-        self.ticker.data['Signal'] = signal_array
+
+        #Transform the signal array to get the difference of the values
+        self.ticker.data['Signal'] = np.diff(signal_array,prepend=0)
 
         #Results
         self.total_fees = 0
         self.operations = []
         self.ticker.data['Buy and Hold'] = (self.ticker.data.Close / self.ticker.data.Close.iloc[0]) * self.balance
         self.ticker.data['Strategy Return'] = pd.Series()
+        self.win_rate = 0
 
+    #Calculates fee for each operation
     def calculate_fee(self) -> float:
         return (self.trading_fees/100) * self.balance
 
@@ -139,6 +138,10 @@ class Strategy():
                 #Update balance
                 self.operations[-1].end(close, time)
                 self.balance *= self.operations[-1].percentual_return
+
+                #Count a win
+                if self.operations[-1].percentual_return > 1:
+                    self.win_rate+=1 
 
                 #Update fees
                 self.total_fees += self.calculate_fee()
@@ -170,6 +173,10 @@ class Strategy():
                 self.operations[-1].end(close, time)
                 self.balance *= self.operations[-1].percentual_return
 
+                #Count a win
+                if self.operations[-1].percentual_return > 1:
+                    self.win_rate+=1 
+
                 #Update fees
                 self.total_fees += self.calculate_fee()
                 self.balance -= self.calculate_fee()
@@ -192,21 +199,19 @@ class Strategy():
 
             self.ticker.data.loc[time,'Strategy Return'] = self.balance
 
-        #Generate results array
+        self.win_rate = 100*self.win_rate/len(self.operations)
         
-        """#Debug stuff
-        for i in self.operations:
+        #Debug stuff
+        '''for i in self.operations:
         
             print(f'Is open: {i.is_open}\n',
                   f'Start time: {i.start_time}\n',
                   f'End time: {i.end_time}\n',
-                  f'Return: {i.percentual_return}\n')
-        print(self.balance-total_fees)
-        teste = pd.DataFrame({'Strategy_Return':self.strategy_return,'Signals':self.signals})
-        print(teste.head(50))
-"""
+                  f'Return: {i.percentual_return}\n')'''
+
         print(self.ticker.data[['Strategy Return','Buy and Hold','Close']])
         print(self.total_fees)
         print(len(self.operations))
+        print(f'{self.win_rate:.2f}')
 
 

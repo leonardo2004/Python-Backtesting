@@ -6,44 +6,78 @@ import datetime
 #Custom:
 import brain
 import indicators
-import signals
 import plotting
 
-"""
-TO-DO:
-    Code:
-    * Code optimization
-    * Code documentation
-        * Roadmap (Skill tree like)
+def filter_signals_causal(signals, min_group_size=3):
+    
+    filtered_signals = signals.copy()
+    n = len(signals)
+    
+    valid_value = 0
+    new_group_size = 0
+    last_invalid_value = 0
+    invalidate_current_group = 0
+    i = 0
+    
+    while i < n:
+        if filtered_signals[i] != valid_value:
+            invalidate_current_group += 1
 
-    Functionality:
-        * Parameter optimization
+            if last_invalid_value == filtered_signals[i]:
+                new_group_size += 1
+                
 
-    Strategies:
-        * Volume strategy
+            else:
+                last_invalid_value = filtered_signals[i]
+                new_group_size = 1
 
-Rules:
-    snake_case for variables, functions and methods
-    PascalCase for classes
-    SCREAMING_SNAKE_CASE for constants
-"""
+            filtered_signals[i] = valid_value
+            
+        else:
+            new_group_size = 0
+            invalidate_current_group = 0
 
+        if new_group_size >= min_group_size:
+            valid_value = last_invalid_value
+            last_invalid_value = None
+        
+        elif invalidate_current_group >= min_group_size:
+            valid_value = 0
+            filtered_signals[i] = valid_value
+
+        i+=1
+        
+    return filtered_signals
 
 INITIAL_BALANCE = 50
 TRADING_FEE = 0 #Trading fee per OPERATION, in percentage (%)
 
 #Time period
 PERIOD_END = datetime.datetime.now()
-PERIOD_START = PERIOD_END - datetime.timedelta(days=8)
+PERIOD_DELTA = 59
+PERIOD_START = PERIOD_END - datetime.timedelta(days=PERIOD_DELTA)
 
+#Define ticker
+ETH = brain.YFTicker('XRP-USD',PERIOD_START,PERIOD_END,'5m')
 
-ETH = brain.YFTicker('ETH-USD',PERIOD_START,PERIOD_END,'5m')
+#Download and save ticker
 #ETH.download()
-#print(ETH.data)
-#ETH.save_pkl('./Data/ticker.pkl')
-ETH.load_pkl('./Data/ticker.pkl')
-ethsma = indicators.SMA(ETH, 5, 'Close')
-signals = ethsma.direction('teste')
+#ETH.save_pkl('./Data/xrp5m.pkl')
+
+#Load ticker from memory
+ETH.load_pkl('./Data/xrp5m.pkl')
+
+#Define SMAs
+ethsma5 = indicators.SMA(ETH, 20, 'Close')
+ethsma20 = indicators.SMA(ETH, 200, 'Close')
+
+#Calculate signals based on the relative position of the smas
+signals = ethsma5.is_crossing(ethsma20)
+#signals = ethsma5.direction()
+#signals = np.array([1, 1, 1, 0, -1, -1, -1, -1, 0, 1, 0, 0])
+signals = filter_signals_causal(signals, min_group_size=5)
+
+'''#Claude AI signal filter prototype:
 signals = np.asarray(signals, dtype=np.int8)
 
 # Método mais eficiente para arrays muito grandes
@@ -53,50 +87,10 @@ group_ids = np.cumsum(changes)
 # Técnica avançada: usar bincount para contar mais rápido
 counts = np.bincount(group_ids)
 valid_groups = counts >= 10
+
 # Broadcasting boolean indexing (mais rápido que dict)
 mask = valid_groups[group_ids]
-signals = np.where(mask, signals, 0)
-
-#signals = np.where(ETH.creturn() > 0, 0, 1)
-#signals = np.where(ETH.creturn() < 0,signals, -1)
-
-
-#Importante
-signals = np.diff(signals,prepend=0)
-#print(ETH.data.round(2))
-#print(ETH.data.items)
+signals = np.where(mask, signals, 0)'''
 
 teste = brain.Strategy(signals, ETH, 500, trading_fee=0.05)
 teste.run()
-
-#SMA TEST
-
-
-
-
-
-
-#Calculate the signals for the 3 MA strategy
-#If the 3 are pointing up == BUY
-#If the 3 are pointing down == SELL
-'''BTC["Signals"] = np.where((signals.SMA_direction("5_Close_SMA", BTC)==1) &
-                          (signals.SMA_direction("20_Close_SMA", BTC)==1) &
-                          (signals.SMA_direction("200_Close_SMA", BTC)==1),
-                          1,
-                          0)
-BTC["Signals"] = np.where((signals.SMA_direction("5_Close_SMA", BTC)==-1) &
-                          (signals.SMA_direction("20_Close_SMA", BTC)==-1) &
-                          (signals.SMA_direction("200_Close_SMA", BTC)==-1),
-                          -1,
-                          BTC["Signals"])
-'''
-
-#Entry calculation 
-# BUY position if Signal == 1; else end order
-# SELL position if Signal == -1; else end order
-'''BTC["Entry"] = BTC.Signals.diff()'''
-
-
-
-#brain.run_strategy(ticker=BTC, fee=TRADING_FEE, initial_balance=INITIAL_BALANCE)
-#plotting.plot_results(BTC)
