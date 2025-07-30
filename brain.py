@@ -198,8 +198,9 @@ class Strategy():
                 signal += 1
 
             self.ticker.data.loc[time,'Strategy Return'] = self.balance
-
-        self.win_rate = 100*self.win_rate/len(self.operations)
+        
+        if self.operations:
+            self.win_rate = 100*self.win_rate/len(self.operations)
         
         #Debug stuff
         '''for i in self.operations:
@@ -212,6 +213,7 @@ class Strategy():
         print(self.ticker.data[['Strategy Return','Buy and Hold','Close']])
         print(self.total_fees)
         print(len(self.operations))
-        print(f'{self.win_rate:.2f}')
+        print(f'{self.win_rate:.2f}%')
+
 
 
